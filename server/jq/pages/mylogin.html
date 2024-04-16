@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Comfort Driver - Login</title>
+    <meta name="robots" content="noindex, nofollow">
+    <!-- Include CSS File Here -->
+    <link rel="stylesheet" href="./css/styles.css"/>
+    <!-- Include CSS File Here -->
+    <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
+    <script type="text/javascript" src="./js/drowsy.js"></script>
+    <script>
+        $(document).ready(function(){
+            $("#login").click(function(){
+                alert('submitting');
+                $("#LoginForm").submit(); // Submit the form
+                // do your work on success and then,
+                var url = "http://google.com";
+                $(location).attr('href',url);
+                location.href = "test.html";
+            });
+        });
+    </script>
+</head>
+<body>
+    <div class="container">
+        <div class="main">
+            <form class="form"  id="LoginForm" method="post" action="http://localhost:6060/login">
+                <h2>Comfort Driver Login</h2>
+                <label>Driver ID :</label>
+                    <input type="text" name="pid" id="pid">
+                <label>Taxi Number :</label>
+                    <input type="text" name="taxi" id="taxi">
+                <label>Password :</label>
+                    <input type="password" name="password" id="password">
+                    <input type="button" name="login" id="login" value="Login">
+            </form>
+        </div>
+    </div>
+    <div id="succsssalert" class="alert"/>
+   <div id="erroralert" />
+</body>
+</html>

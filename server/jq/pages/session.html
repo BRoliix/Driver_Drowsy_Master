@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="./css/login.css">
+
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.4/jquery.min.js"></script>
+    <script>
+       $(document).ready(function(){
+  //$("button").click(function() {
+    setInterval(function(){
+    $('#sessions tbody').empty()
+     // alert("submitting")
+    $.ajax({
+      type: "get",
+      url: "http://localhost:6060/session",
+      dataType: "jsonp",
+      jsonp: "jsonp",
+      jsonpCallback: "myJsonMethod",
+      async: false,
+      success: function(response) {
+        console.log(response);
+
+        $("mytable2").find('tbody').append("<tr><td>jsonData</td></tr>");
+
+         //setInterval('location.reload()', 3000);
+      },
+      error: function(xhr, status, error) {
+        console.error(status + ": " + error);
+      }
+    });
+    }, 5000);
+  });
+//});
+
+function myJsonMethod(response) {
+
+    response.forEach(function(resultRow) {
+        $('#sessions').append(
+
+          "<tr>" +
+            "<td>"+ resultRow.FirstName +"  "+ resultRow.LastName +"</td>" +
+            "<td>"+ resultRow.Code+"</td>" +
+            "<td>"+ resultRow.StartTime+"</td>" +
+            "<td>"+ resultRow.EndTime+"</td>" +
+            "<td>"+ resultRow.Status+"</td>" +
+            "</tr>"
+        );
+
+     })
+}
+
+
+    </script>
+    <title>User Login</title>
+</head>
+<body>
+    <nav>
+        <div class="left">
+            <img src="./img/logo.png" id="navimg" alt="logo">
+            <h1 id="navname">Driver Drowsiness Detection</h1>
+        </div>
+
+        <div class="right">
+             <a href="index.html">Home</a>
+            <a href="login.html">Driver login</a>
+            <a href="signup.html">Admin login</a>
+        </div>
+    </nav>
+
+    <div id="session" class="container" >
+
+        <table id="sessions" border="1">
+            <thead><tr bgcolor="#deb887"><th>NAME</th><th>CODE</th><th>START TIME</th><th>END TIME</th><th>STATUS</th></tr></thead>
+            <tbody></tbody>
+        </table>
+      </div>
+
+</body>
+</html>

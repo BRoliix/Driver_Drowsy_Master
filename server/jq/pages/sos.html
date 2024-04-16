@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="./css/login.css">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.4/jquery.min.js"></script>
+    <script>
+
+    $(document).ready(function(){
+
+          $("#action").click(function() {
+                 alert("action")
+              var radioValue = $("input[name='sosid']:checked").val();
+              var formData = {
+                      sosid: radioValue
+                    };
+             alert(formData)
+            $.ajax({
+                      type: "POST",
+                      url: "http://localhost:6060/sos",
+                      dataType: "jsonp",
+                      jsonp: "jsonp",
+                      jsonpCallback: "myJsonMethod",
+                      data: formData,
+                      async: false,
+                      success: function(response) {
+                        console.log(response);
+                        $("mytable2").find('tbody').append("<tr><td>jsonData</td></tr>");
+                      },
+                      error: function(xhr, status, error) {
+                        console.error(status + ": " + error);
+                      }
+                });
+
+          });
+
+         // $("#data").click(function() {
+              //alert("submitting")
+        returnID = setInterval(function(){
+            $.ajax({
+              type: "get",
+              url: "http://localhost:6060/sos",
+              dataType: "jsonp",
+              jsonp: "jsonp",
+              jsonpCallback: "myJsonMethod",
+              async: false,
+              success: function(response) {
+                console.log(response);
+                $("mytable2").find('tbody').append("<tr><td>jsonData</td></tr>");
+              },
+             complete:function(data) {
+                    setTimeout(3000);
+                },
+              error: function(xhr, status, error) {
+                console.error(status + ": " + error);
+              }
+            });
+          }, 5000);
+         function stopExecution() {
+            clearInterval(returnId);
+        }
+});
+
+function myJsonMethod(response) {
+    $('#sessions  tbody').empty()
+    response.forEach(function(resultRow) {
+        $('#sessions').append(
+
+          "<tr>" +
+            "<td><input type='radio' value="+ resultRow.ID + " id='sosid' name='sosid'/></td>" +
+            "<td>"+ resultRow.FirstName +"  "+ resultRow.LastName +"</td>" +
+            "<td>"+ resultRow.Code+"</td>" +
+            "<td>"+ resultRow.TaxiNumber+"</td>" +
+            "<td>"+ resultRow.SosDetails+"</td>" +
+            "<td>"+ resultRow.CreatedTime+"</td>" +
+            "</tr>"
+        );
+     })
+     //$('#mytable2').append("<tr><td colSpan={6} align={'right'}><button id='action'>Action</button></td></tr>")
+}
+
+
+    </script>
+    <title>User Login</title>
+</head>
+<body>
+    <nav>
+        <div class="left">
+            <img src="./img/logo.png" id="navimg" alt="logo">
+            <h1 id="navname">Driver Drowsiness Detection</h1>
+        </div>
+
+        <div class="right">
+           <a href="index.html">Home</a>
+            <a href="login.html">Driver login</a>
+            <a href="signup.html">Admin login</a>
+        </div>
+    </nav>
+
+    <div id="session" class="container">
+        <table id="sessions" border="1">
+            <thead>  <tr><th>Action</th> <th>Driver Name</th><th>Code</th><th>Taxi Number</th><th>SOS Details</th><th>Start Time</th></tr> </thead>
+            <tbody></tbody>
+
+        </table>
+        <table id="footer" border="1">
+             <tr><td colSpan=6 align='right'><button id='action'>Action</button></tr>
+        </table>
+
+
+      </div>
+
+</body>
+</html>

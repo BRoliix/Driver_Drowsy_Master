@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="./css/login.css">
+    <title>User Login</title>
+</head>
+<body>
+    <nav>
+        <div class="left">
+            <img src="./img/logo.png" id="navimg" alt="logo">
+            <h1 id="navname">Driver Drowsiness Detection</h1>
+        </div>
+
+        <div class="right">
+            <a href="index.html">Home</a>
+            <a href="login.html">Driver login</a>
+            <a href="signup.html">Admin login</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <img src="./img/logo 1.png" alt="logo1">
+        <p>LOGIN</p>
+
+        <form action="http://localhost:6060/login" method="POST">
+            <input type="text" id="pid" name="pid" required placeholder="User ID"/>
+
+            <input type="text" id="taxi" name="taxi"  required placeholder="Vehicle Number"/>
+
+            <input type="password" id="password" name="password"  required placeholder="Password"/>
+
+            <input type="submit" value="Submit"/>
+        </form>
+    </div>
+
+    <script>
+        function validateForm() {
+            var username = document.getElementById('pid').value;
+            var vehicleNumber = document.getElementById('taxi').value;
+            var userPhone = document.getElementById('password').value;
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <link rel="stylesheet" href="./css/login.css">
+    <title>Admin loginpage</title>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.4/jquery.min.js"></script>
+<script>
+    $(document).ready(function() {
+        $("#action").click(function () {
+            //alert("action")
+            var pidv = $("#pid").val();
+            var pv = $("#password").val();
+            var formData = {
+                pid: pidv,
+                password: pv
+            };
+            //alert(formData)
+            $.ajax({
+                type: "POST",
+                url: "http://localhost:6060/admlogin",
+                dataType: "jsonp",
+                jsonp: "jsonp",
+                jsonpCallback: "myJsonMethod",
+                data: formData,
+                async: false,
+                success: function (data) {
+                    if (data != "") {
+                        var link = "http://localhost:8000/jq/pages/session.html";
+                        window.open(link, 'newStuff'); //open's link in newly opened tab!
+                    }
+                },
+                error: function (xhr, status, error) {
+                    console.error(status + ": " + error);
+                }
+            });
+        });
+        });
+     function myJsonMethod(data) {
+         if (data != "") {
+                        var link = "http://localhost:8000/jq/pages/session.html";
+                        window.open(link, 'newStuff'); //open's link in newly opened tab!
+                    }
+     }
+</script>
+</head>
+<body>
+    <nav>
+        <div class="left">
+            <img src="./img/logo.png" id="navimg" alt="logo">
+            <h1 id="navname">Driver Drowsiness Detection</h1>
+        </div>
+
+        <div class="right">
+            <a href="index.html">Home</a>
+            <a href="login.html">Driver login</a>
+            <a href="signup.html">Admin login</a>
+        </div>
+    </nav>
+
+
+    <div class="container">
+        <h1><img src ="./img/logo 1.png"></img></h1>
+        <p><b>DRIVER DROWSINESS DETECTION</b></p>
+
+            <input type="text" id="pid" name="pid" required placeholder="Admin ID"/>
+
+            <input type="password" id="password" name="password"  required placeholder="Password"/>
+
+            <button id='action'>Action</button>
+
+    </div>
+
+    <script>
+        function validateForm() {
+            var username = document.getElementById('username').value;
+            var userPhone = document.getElementById('Password').value;
+        }
+    </script>
+</body>
+</html>
+
