@@ -1,150 +1,171 @@
-import mysql.connector
-import time
+from pymongo import MongoClient
 from datetime import datetime
 import pandas as pd
+from bson import ObjectId, json_util
+import json
+from dotenv import load_dotenv
+import os
 
+load_dotenv()
 
 def connect():
-    cnx = mysql.connector.connect(user='root', password='Rohil7203',
-                                  host='127.0.0.1',
-                                  database='rohil')
-    return cnx
-
-
-def connect_ro():
-    cnx = mysql.connector.connect(user='root', password='Database_sucks55',
-                                  host='192.168.87.155',
-                                  database='DRIVER_DROWSINESS')
-    return cnx
-
+    client = MongoClient(os.getenv('MONGODB_URI'))
+    db = client[os.getenv('DB_NAME')]
+    return db
 
 def check():
     print(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
     var = (datetime.now() + pd.DateOffset(hours=8)).strftime('%Y-%m-%d %H:%M:%S')
     print(var)
 
-    query = "SELECT `sos`.`id`,  `sos`.`taxiid`, `sos`.`driverid`, `sos`.`details`, `sos`.`status`," \
-            "  `sos`.`createdtime`,  `sos`.`actionedtime`,  `sos`.`sessionid` FROM `DRIVER_DROWSINESS`.`sos`"
+    db = connect()
+    sos_collection = db.sos
+    
+    sos_records = list(sos_collection.find({}, {
+        'taxiid': 1,
+        'driverid': 1,
+        'details': 1,
+        'status': 1,
+        'createdtime': 1,
+        'actionedtime': 1,
+        'sessionid': 1
+    }))
+    print(sos_records)
 
-    cnx = connect_ro()
-    cursor = cnx.cursor()
-    cursor.execute(query)
+def raise_sos():
+    try:
+        print("Raising SOS alert...")
+        db = connect()
+        sos_data = {
+            'taxiid': ObjectId(),
+            'driverid': ObjectId(),
+            'details': 'Driver detected sleeping/drowsy. Immediate attention required.',
+            'status': 'NEW',
+            'createdtime': datetime.now(),
+            'actionedtime': datetime.now()
+        }
+        result = db.sos.insert_one(sos_data)
+        if result.inserted_id:
+            print("SOS alert raised successfully")
+            return True
+        return False
+    except Exception as e:
+        print(f"Error raising SOS: {e}")
+        return False
 
-    res = [dict((cursor.description[i][0], value) for i, value in enumerate(row)) for row in cursor.fetchall()]
-    print(res)
-    # return res
+def sos_details(sid=None):
+    db = connect()
+    sos_collection = db.sos
+    
+    sos_records = list(sos_collection.find({}, {
+        'taxiid': 1,
+        'driverid': 1,
+        'details': 1,
+        'status': 1,
+        'createdtime': 1,
+        'actionedtime': 1,
+        'sessionid': 1
+    }))
+    
+    return json.loads(json_util.dumps(sos_records))
 
 
 def session_details():
-    cnx = connect()
-    cursor = cnx.cursor()
-    query = "select t.number as TaxiNumber , u.firstname as FirstName, u.lastname as LastName, u.code as Code," \
-            "DATE_FORMAT(s.starttime, '%Y-%m-%d %H:%M:%S') as StartTime, DATE_FORMAT(s.endtime, '%Y-%m-%d %H:%M:%S') as EndTime, ss.actionedTime as Status " \
-            "FROM rohil.session s LEFT JOIN rohil.sos ss ON s.id = ss.sessionId , rohil.taxi t, rohil.user u " \
-            "WHERE s.taxiid = t.id and s.userid = u.id and u.type = 'Driver'  and u.status='Active'"
-    print(query)
-    cursor.execute(query)
-    res = [dict((cursor.description[i][0], value) for i, value in enumerate(row)) for row in cursor.fetchall()]
-    print(res)
-    for row in res:
-        if row['Status'] is None:
-            row.update({'Status': 'Active'})
-        else:
-            row.update({'Status': 'SOS Actioned'})
-    print(res)
-    # return cursor.fetchall()
-    return res
-
-
-def sos_details(sid=None):
-    print(sid)
-    if sid is not None:
-        action_sos(sid)
-
-    query = "select s.id as ID, u.firstName as FirstName, u.lastName as LastName, t.number as TaxiNumber, u.code as CODE, s.details as SosDetails," \
-            " DATE_FORMAT(s.createdTime, '%Y-%m-%d %H:%M:%S') as CreatedTime, DATE_FORMAT(s.actionedTime, '%Y-%m-%d %H:%M:%S') as ActionedTime" \
-            " FROM rohil.sos s, rohil.taxi t, rohil.user u " \
-            "WHERE s.taxiid = t.id and s.driverid = u.id and u.type = 'Driver' and u.status='Active'" \
-            "AND s.actionedTime IS NULL"
-
-    cnx = connect()
-    cursor = cnx.cursor()
-    cursor.execute(query)
-
-    res = [dict((cursor.description[i][0], value) for i, value in enumerate(row)) for row in cursor.fetchall()]
-    print(res)
-    return res
-
-
-def raise_sos():
-    print("Raise SOS ......")
-    cnx = connect()
-    cursor = cnx.cursor()
-    query = """INSERT INTO rohil.sos(`taxiid`, `driverid`, `details`, `status`, `createdtime`, `actionedtime`) VALUES
-     (1,1, 'Driver immobilized at Yishun blk 11. Please check Priority 5', 'NEW', '2023-06-06 011:00:00','2023-06-06 11:03:00')"""
-
-    cursor.execute(query)
-    cnx.commit()
-
-    cursor.close()
-    cnx.close()
-
+    db = connect()
+    pipeline = [
+        {
+            '$lookup': {
+                'from': 'taxi',
+                'localField': 'taxiid',
+                'foreignField': '_id',
+                'as': 'taxi'
+            }
+        },
+        {
+            '$lookup': {
+                'from': 'user',
+                'localField': 'userid',
+                'foreignField': '_id',
+                'as': 'user'
+            }
+        },
+        {
+            '$lookup': {
+                'from': 'sos',
+                'localField': '_id',
+                'foreignField': 'sessionId',
+                'as': 'sos'
+            }
+        },
+        {
+            '$match': {
+                'user.type': 'Driver',
+                'user.status': 'Active'
+            }
+        }
+    ]
+    
+    sessions = list(db.session.aggregate(pipeline))
+    formatted_sessions = []
+    
+    for session in sessions:
+        formatted_session = {
+            'TaxiNumber': session['taxi'][0]['number'],
+            'FirstName': session['user'][0]['firstname'],
+            'LastName': session['user'][0]['lastname'],
+            'Code': session['user'][0]['code'],
+            'StartTime': session['starttime'].strftime('%Y-%m-%d %H:%M:%S'),
+            'EndTime': session['endtime'].strftime('%Y-%m-%d %H:%M:%S'),
+            'Status': 'SOS Actioned' if session.get('sos') else 'Active'
+        }
+        formatted_sessions.append(formatted_session)
+    
+    return formatted_sessions
 
 def action_sos(sid):
-    cnx = connect()
-    cursor = cnx.cursor()
-
-    date = time.strftime('%Y-%m-%d %H:%M:%S')
-    print(date)
-    query = "UPDATE rohil.sos SET actionedTime = '" + time.strftime('%Y-%m-%d %H:%M:%S') + "' WHERE id =" + sid
-
-    cursor.execute(query)
-    cnx.commit()
-
-    cursor.close()
-    cnx.close()
-
+    db = connect()
+    db.sos.update_one(
+        {'_id': ObjectId(sid)},
+        {'$set': {'actionedtime': datetime.now()}}
+    )
 
 def login(pid, taxi, password):
-    print(" Driver logged in")
-    uquery = "SELECT status FROM rohil.user where password ='" + password + "' and id = " + pid
-
-    pquery = "SELECT id FROM rohil.taxi WHERE number='" + taxi + "'"
-    cnx = connect()
-    cursor = cnx.cursor(buffered=True)
-    cursor.execute(uquery)
-    urowcount = cursor.rowcount
-    cursor.execute(pquery)
-    taxiid = cursor.fetchone()[0]
-    print(urowcount)
-    print(taxiid)
-    if urowcount > 0 & taxiid is not None:
-        d1 = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        d2 = (datetime.now() + pd.DateOffset(hours=8)).strftime('%Y-%m-%d %H:%M:%S')
-        print(d1)
-        print(d2)
-
-        query = "INSERT INTO rohil.session (taxiid, userid, starttime, endtime) VALUES (" + str(taxiid) + ", " + str(pid) + " , '" + d1 + "','" + d2 + "')"
-
-        print(query)
-        cursor.execute(query)
-        cnx.commit()
-
-    cursor.close()
-    cnx.close()
+    db = connect()
+    user = db.user.find_one({
+        '_id': ObjectId(pid),
+        'password': password
+    })
+    
+    taxi_doc = db.taxi.find_one({'number': taxi})
+    
+    if user and taxi_doc:
+        session_data = {
+            'taxiid': taxi_doc['_id'],
+            'userid': ObjectId(pid),
+            'starttime': datetime.now(),
+            'endtime': datetime.now() + pd.DateOffset(hours=8)
+        }
+        db.session.insert_one(session_data)
 
 def admlogin(pid, password):
-    print(" Driver logged in")
-    uquery = "SELECT status FROM rohil.user where password ='" + password + "' and id = " + pid
-    cnx = connect()
-    cursor = cnx.cursor()
-    cursor.execute(uquery)
-    res = [dict((cursor.description[i][0], value) for i, value in enumerate(row)) for row in cursor.fetchall()]
-    print(res)
-    return res
+    db = connect()
+    user = db.user.find_one({
+        '_id': ObjectId(pid),
+        'password': password
+    }, {'status': 1})
+    return [user] if user else []
 
 
+def create_user(user_data):
+    try:
+        db = connect()
+        result = db.user.insert_one(user_data)
+        return str(result.inserted_id)
+    except Exception as e:
+        print(f"Error creating user: {e}")
+        return None
+    
+    
 class DAO:
     if __name__ == "__main__":
-        # raise_sos()
         check()
