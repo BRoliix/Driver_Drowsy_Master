@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drowsiness Detection System</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            text-align: center;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        #videoFeed {
+            max-width: 100%;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        #status {
+            font-size: 24px;
+            font-weight: bold;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .active { background-color: #d4edda; color: #155724; }
+        .drowsy { background-color: #fff3cd; color: #856404; }
+        .sleeping { background-color: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Drowsiness Detection System</h1>
+        <img id="videoFeed" alt="Video feed">
+        <div id="status">Initializing...</div>
+    </div>
+
+    <audio id="alarmSound" src="alarm.wav" preload="auto"></audio>
+
+    <script>
+        const videoFeed = document.getElementById('videoFeed');
+        const statusDiv = document.getElementById('status');
+        const alarmSound = document.getElementById('alarmSound');
+        
+        function connectWebSocket() {
+            const ws = new WebSocket('ws://localhost:8000/ws/video');
+            
+            ws.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                videoFeed.src = `data:image/jpeg;base64,${data.frame}`;
+                statusDiv.textContent = data.status;
+                
+                // Update status styling
+                statusDiv.className = '';
+                if (data.status.includes('Active')) {
+                    statusDiv.classList.add('active');
+                } else if (data.status.includes('Drowsy')) {
+                    statusDiv.classList.add('drowsy');
+                } else if (data.status.includes('SLEEPING')) {
+                    statusDiv.classList.add('sleeping');
+                }
+                
+                // Handle alarm
+                if (data.play_alarm) {
+                    alarmSound.play().catch(err => console.log('Error playing alarm:', err));
+                } else {
+                    alarmSound.pause();
+                    alarmSound.currentTime = 0;
+                }
+            };
+            
+            ws.onclose = function() {
+                console.log('WebSocket connection closed');
+                setTimeout(connectWebSocket, 1000); // Reconnect after 1 second
+            };
+            
+            ws.onerror = function(err) {
+                console.error('WebSocket error:', err);
+                ws.close();
+            };
+        }
+        
+        connectWebSocket();
+    </script>
+</body>
+</html>
