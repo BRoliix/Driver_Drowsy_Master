@@ -1,152 +1,299 @@
+
+from fastapi import FastAPI, WebSocket
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 import cv2
 import numpy as np
 import dlib
 from imutils import face_utils
-import pyglet
+import asyncio
+import base64
+import os
 from datetime import datetime
-import dao
-import platform
-import streamlit as st
-import threading
-import time
+from dao import raise_sos
 
-def sound_alarm():
-    try:
-        music = pyglet.resource.media('alarm.wav')
-        music.play()
-    except Exception as e:
-        st.error(f"Error playing alarm: {e}")
+app = FastAPI()
 
-def compute(ptA, ptB):
-    dist = np.linalg.norm(ptA - ptB)
-    return dist
+static_dir = "static"
+if not os.path.exists(static_dir):
+    os.makedirs(static_dir)
 
-def blinked(a, b, c, d, e, f):
-    up = compute(b, d) + compute(c, e)
-    down = compute(a, f)
-    ratio = up / (2.0 * down)
-
-    if ratio > 0.25:
-        return 2
-    elif 0.21 < ratio <= 0.25:
-        return 1
-    else:
-        return 0
-
-def get_video_capture():
-    """Determine appropriate video backend based on the OS."""
-    system = platform.system()
-    if system == "Windows":
-        return cv2.VideoCapture(0, cv2.CAP_DSHOW)  # Use DirectShow on Windows
-    else:
-        return cv2.VideoCapture(0)  # Default backend for Linux and macOS
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 class DrowsinessDetector:
     def __init__(self):
-        self.cap = get_video_capture()
         self.detector = dlib.get_frontal_face_detector()
         self.predictor = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")
-        self.frame = None
-        self.running = True
+        self.sleep = 0
+        self.drowsy = 0
+        self.active = 0
+        self.status = ""
+        self.color = (0, 0, 0)
+        self.last_alert_time = None
+        self.ALERT_COOLDOWN = 30
+        self.previous_status = ""
 
-    def process_frame(self):
-        sleep = 0
-        drowsy = 0
-        active = 0
-        status = ""
-        color = (0, 0, 0)
-        last_alert_time = None
-        ALERT_COOLDOWN = 30
-        previous_status = ""
+    def compute(self, ptA, ptB):
+        return np.linalg.norm(ptA - ptB)
 
-        while self.running and self.cap.isOpened():
-            ret, frame = self.cap.read()
-            if not ret:
-                continue
+    def blinked(self, a, b, c, d, e, f):
+        up = self.compute(b, d) + self.compute(c, e)
+        down = self.compute(a, f)
+        ratio = up / (2.0 * down)
+        
+        if ratio > 0.25:
+            return 2
+        elif ratio > 0.21 and ratio <= 0.25:
+            return 1
+        else:
+            return 0
 
-            self.frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    async def process_frame(self, frame):
+        try:
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             faces = self.detector(gray)
+            play_alarm = False
+
+            if len(faces) == 0:
+                self.sleep = 0
+                self.drowsy = 0
+                self.active = 0
+                self.status = "No face detected"
+                return frame, self.status, play_alarm
 
             for face in faces:
                 landmarks = self.predictor(gray, face)
                 landmarks = face_utils.shape_to_np(landmarks)
 
-                left_blink = blinked(landmarks[36], landmarks[37],
-                                     landmarks[38], landmarks[41], landmarks[40], landmarks[39])
-                right_blink = blinked(landmarks[42], landmarks[43],
-                                      landmarks[44], landmarks[47], landmarks[46], landmarks[45])
+                # Draw facial landmarks
+                for n in range(0, 68):
+                    (x, y) = landmarks[n]
+                    cv2.circle(frame, (x, y), 1, (255, 255, 255), -1)
+
+                left_blink = self.blinked(landmarks[36], landmarks[37],
+                                        landmarks[38], landmarks[41], landmarks[40], landmarks[39])
+                right_blink = self.blinked(landmarks[42], landmarks[43],
+                                         landmarks[44], landmarks[47], landmarks[46], landmarks[45])
 
                 current_time = datetime.now()
-                can_alert = (last_alert_time is None or
-                             (current_time - last_alert_time).total_seconds() > ALERT_COOLDOWN)
+                can_alert = (self.last_alert_time is None or 
+                            (current_time - self.last_alert_time).total_seconds() > self.ALERT_COOLDOWN)
 
                 if left_blink == 0 or right_blink == 0:
-                    sleep += 1
-                    drowsy = 0
-                    active = 0
-                    if sleep > 6:
-                        status = "SLEEPING !!!"
-                        if status != previous_status or can_alert:
-                            try:
-                                sound_alarm()
-                                dao.raise_sos()
-                                last_alert_time = current_time
-                            except Exception as e:
-                                print(f"Error raising alert: {e}")
-                        color = (255, 0, 0)
+                    self.sleep += 1
+                    self.drowsy = 0
+                    self.active = 0
+                    if self.sleep > 30:
+                        self.status = "SLEEPING !!!"
+                        if self.status != self.previous_status or can_alert:
+                            play_alarm = True
+                            raise_sos()
+                            self.last_alert_time = current_time
+                        self.color = (255, 0, 0)
 
                 elif left_blink == 1 or right_blink == 1:
-                    sleep = 0
-                    active = 0
-                    drowsy += 1
-                    if drowsy > 6:
-                        status = "Drowsy !"
-                        if status != previous_status or can_alert:
-                            try:
-                                sound_alarm()
-                                dao.raise_sos()
-                                last_alert_time = current_time
-                            except Exception as e:
-                                print(f"Error raising alert: {e}")
-                        color = (0, 0, 255)
+                    self.sleep = 0
+                    self.active = 0
+                    self.drowsy += 1
+                    if self.drowsy > 30:
+                        self.status = "Drowsy !"
+                        if self.status != self.previous_status or can_alert:
+                            play_alarm = True
+                            raise_sos()
+                            self.last_alert_time = current_time
+                        self.color = (0, 0, 255)
 
                 else:
-                    drowsy = 0
-                    sleep = 0
-                    active += 1
-                    if active > 6:
-                        status = "Active :)"
-                        color = (0, 255, 0)
+                    self.drowsy = 0
+                    self.sleep = 0
+                    self.active += 1
+                    if self.active > 6:
+                        self.status = "Active :)"
+                        self.color = (0, 255, 0)
 
-                previous_status = status
-                cv2.putText(frame, status, (100, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.2, color, 3)
+                self.previous_status = self.status
+                cv2.putText(frame, self.status, (100, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.2, self.color, 3)
 
-            time.sleep(0.01)  # Small delay to make the thread responsive
+            return frame, self.status, play_alarm
 
-        self.cap.release()
+        except Exception as e:
+            print(f"Error processing frame: {e}")
+            return frame, "Error processing", False
 
-def main():
-    st.title("Real-Time Drowsiness Detection")
-    st.write("Click the button below to start the detection system.")
+detector = DrowsinessDetector()
 
-    detector = DrowsinessDetector()
-    placeholder = st.empty()
+@app.websocket("/ws/video")
+async def video_feed(websocket: WebSocket):
+    await websocket.accept()
+    cap = cv2.VideoCapture(0)
+    
+    try:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+                
+            processed_frame, status, play_alarm = await detector.process_frame(frame)
+            _, buffer = cv2.imencode('.jpg', processed_frame)
+            base64_frame = base64.b64encode(buffer).decode('utf-8')
+            
+            await websocket.send_json({
+                "frame": base64_frame,
+                "status": status,
+                "play_alarm": play_alarm
+            })
+            
+            await asyncio.sleep(0.03)
+            
+    except Exception as e:
+        print(f"WebSocket error: {e}")
+    finally:
+        cap.release()
 
-    def run_detection():
-        detector.process_frame()
+@app.get("/")
+async def get_html():
+    html_content = """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Sleeping Detection</title>
+        <style>
+            body {
+                font-family: Arial;
+                max-width: 800px;
+                margin: 0 auto;
+                padding: 20px;
+                background-color: #f5f5f5;
+            }
+            .container {
+                background-color: white;
+                padding: 20px;
+                border-radius: 10px;
+                box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            }
+            #video {
+                width: 100%;
+                max-width: 640px;
+                border-radius: 5px;
+                margin: 20px 0;
+            }
+            #status {
+                padding: 10px;
+                margin: 10px 0;
+                font-weight: bold;
+                border-radius: 5px;
+            }
+            #startButton {
+                background-color: #4CAF50;
+                color: white;
+                padding: 10px 20px;
+                border: none;
+                border-radius: 5px;
+                cursor: pointer;
+                font-size: 16px;
+                margin: 10px 0;
+            }
+            #startButton:hover {
+                background-color: #45a049;
+            }
+            .active { background-color: #d4edda; color: #155724; }
+            .sleeping { background-color: #f8d7da; color: #721c24; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Drowsiness Detection System</h1>
+            <button id="startButton">Start Detection</button>
+            <img id="video" alt="Video feed" style="display: none;">
+            <div id="status">Click 'Start Detection' to begin</div>
+        </div>
 
-    thread = threading.Thread(target=run_detection)
-    if st.button("Start Detection"):
-        thread.start()
+        <script>
+            let ws = null;
+            const video = document.getElementById('video');
+            const status = document.getElementById('status');
+            const startButton = document.getElementById('startButton');
+            let isDetectionRunning = false;
+            let audioContext = null;
+            let alarmBuffer = null;
+            let currentAlarm = null;
 
-    while detector.running:
-        if detector.frame is not None:
-            placeholder.image(detector.frame, channels="RGB")
-        time.sleep(0.03)  # Control frame update rate
+            async function loadAlarmSound() {
+                const response = await fetch('/static/alarm.wav');
+                const arrayBuffer = await response.arrayBuffer();
+                alarmBuffer = await audioContext.decodeAudioData(arrayBuffer);
+            }
 
-    detector.running = False
-    thread.join()
+            function playAlarm() {
+                if (alarmBuffer && !currentAlarm) {
+                    const source = audioContext.createBufferSource();
+                    source.buffer = alarmBuffer;
+                    source.connect(audioContext.destination);
+                    source.start(0);
+                    source.onended = () => {
+                        currentAlarm = null;
+                    };
+                    currentAlarm = source;
+                }
+            }
 
-if __name__ == "__main__":
-    main()
+            function stopAlarm() {
+                if (currentAlarm) {
+                    currentAlarm.stop();
+                    currentAlarm = null;
+                }
+            }
+
+            async function startDetection() {
+                if (isDetectionRunning) return;
+                
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    await loadAlarmSound();
+                }
+                
+                video.style.display = 'block';
+                isDetectionRunning = true;
+                startButton.textContent = 'Detection Running';
+                
+                ws = new WebSocket(`ws://${window.location.host}/ws/video`);
+                
+                ws.onmessage = function(event) {
+                    const data = JSON.parse(event.data);
+                    video.src = `data:image/jpeg;base64,${data.frame}`;
+                    status.textContent = data.status;
+                    
+                    status.className = '';
+                    if (data.status.includes('Active')) {
+                        status.classList.add('active');
+                        stopAlarm();
+                    } else if (data.status.includes('SLEEPING')) {
+                        status.classList.add('sleeping');
+                        if (data.play_alarm) {
+                            playAlarm();
+                        }
+                    }
+                };
+                
+                ws.onclose = function() {
+                    status.textContent = 'Connection closed';
+                    isDetectionRunning = false;
+                    startButton.textContent = 'Start Detection';
+                    stopAlarm();
+                    setTimeout(startDetection, 1000);
+                };
+                
+                ws.onerror = function(err) {
+                    console.error('WebSocket error:', err);
+                    ws.close();
+                };
+            }
+            
+            startButton.addEventListener('click', startDetection);
+        </script>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
