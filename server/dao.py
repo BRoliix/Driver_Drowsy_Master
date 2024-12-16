@@ -5,6 +5,18 @@ from bson import ObjectId, json_util
 import json
 from dotenv import load_dotenv
 import os
+from geopy.geocoders import Nominatim
+import geocoder
+
+def get_current_location():
+    g = geocoder.ip('me')
+    geolocator = Nominatim(user_agent="my_agent")
+    location = geolocator.reverse(f"{g.latlng[0]}, {g.latlng[1]}")
+    return {
+        'latitude': g.latlng[0],
+        'longitude': g.latlng[1],
+        'address': location.address if location else 'Unknown'
+    }
 
 load_dotenv()
 
@@ -32,18 +44,30 @@ def check():
     }))
     print(sos_records)
 
-def raise_sos():
+def raise_sos(location_data=None):
     try:
         print("Raising SOS alert...")
         db = connect()
+        
+        # If no location data is provided, get current location
+        if location_data is None:
+            location_data = get_current_location()
+        
+        print(f"Location data: {location_data}")
         sos_data = {
             'taxiid': ObjectId(),
             'driverid': ObjectId(),
             'details': 'Driver detected sleeping/drowsy. Immediate attention required.',
             'status': 'NEW',
             'createdtime': datetime.now(),
-            'actionedtime': datetime.now()
+            'actionedtime': datetime.now(),
+            'location': {
+                'latitude': location_data['latitude'],
+                'longitude': location_data['longitude'],
+                'address': location_data['address']
+            }
         }
+        
         result = db.sos.insert_one(sos_data)
         if result.inserted_id:
             print("SOS alert raised successfully")
@@ -64,11 +88,11 @@ def sos_details(sid=None):
         'status': 1,
         'createdtime': 1,
         'actionedtime': 1,
-        'sessionid': 1
+        'sessionid': 1,
+        'location': 1  # Added location field to the projection
     }))
     
     return json.loads(json_util.dumps(sos_records))
-
 
 def session_details():
     db = connect()
