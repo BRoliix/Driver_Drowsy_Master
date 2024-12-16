@@ -86,8 +86,8 @@ class DrowsinessDetector:
                     if self.sleep > 30:
                         self.status = "SLEEPING !!!"
                         if self.status != self.previous_status or can_alert:
-                            raise_sos()
                             play_alarm = True
+                            raise_sos()
                             self.last_alert_time = current_time
                         self.color = (255, 0, 0)
 
@@ -98,8 +98,8 @@ class DrowsinessDetector:
                     if self.drowsy > 30:
                         self.status = "Drowsy !"
                         if self.status != self.previous_status or can_alert:
-                            raise_sos()
                             play_alarm = True
+                            raise_sos()
                             self.last_alert_time = current_time
                         self.color = (0, 0, 255)
 
@@ -158,7 +158,7 @@ async def get_html():
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Drowsiness Detection</title>
+        <title>Sleeping Detection</title>
         <style>
             body {
                 font-family: Arial;
