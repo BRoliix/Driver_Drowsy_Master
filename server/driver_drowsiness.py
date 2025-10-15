@@ -75,6 +75,9 @@ class DrowsinessDetector:
         try:
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             play_alarm = False
+            current_time = datetime.now()
+            can_alert = (self.last_alert_time is None or 
+                       (current_time - self.last_alert_time).total_seconds() > self.ALERT_COOLDOWN)
 
             if DLIB_AVAILABLE and hasattr(self, 'detector'):
                 # Use dlib detection
@@ -86,6 +89,10 @@ class DrowsinessDetector:
                     return frame, self.status, play_alarm
 
                 for face in faces:
+                    # Draw face rectangle
+                    x, y, w, h = face.left(), face.top(), face.width(), face.height()
+                    cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                    
                     if self.use_advanced and hasattr(self, 'predictor'):
                         # Advanced landmark detection
                         landmarks = self.predictor(gray, face)
@@ -99,17 +106,27 @@ class DrowsinessDetector:
                         right_ear = self.calculate_ear(right_eye)
                         ear = (left_ear + right_ear) / 2.0
                         
+                        # Draw eye contours
+                        left_hull = cv2.convexHull(left_eye)
+                        right_hull = cv2.convexHull(right_eye)
+                        cv2.drawContours(frame, [left_hull], -1, (0, 255, 0), 1)
+                        cv2.drawContours(frame, [right_hull], -1, (0, 255, 0), 1)
+                        
+                        # Display EAR value
+                        cv2.putText(frame, f"EAR: {ear:.2f}", (300, 30),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
+                        
                         if ear < 0.25:  # Eyes closed threshold
                             self.drowsy_frames += 1
                         else:
                             self.drowsy_frames = 0
                     else:
-                        # Basic dlib detection without landmarks
-                        self.drowsy_frames += 1 if self.drowsy_frames < 10 else 0
-                        
-                    # Draw face rectangle
-                    x, y, w, h = face.left(), face.top(), face.width(), face.height()
-                    cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                        # Basic dlib detection without landmarks - simple drowsiness check
+                        eyes_count = self.simple_eye_detection(gray, (x, y, w, h))
+                        if eyes_count < 2:
+                            self.drowsy_frames += 1
+                        else:
+                            self.drowsy_frames = max(0, self.drowsy_frames - 1)
             else:
                 # Use OpenCV cascade detection
                 faces = self.face_cascade.detectMultiScale(gray, 1.3, 5)
@@ -122,7 +139,7 @@ class DrowsinessDetector:
                 for (x, y, w, h) in faces:
                     cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
                     
-                    # Simple eye detection
+                    # Simple eye detection for OpenCV path
                     eyes_count = self.simple_eye_detection(gray, (x, y, w, h))
                     
                     if eyes_count < 2:  # Likely eyes closed
@@ -130,43 +147,25 @@ class DrowsinessDetector:
                     else:
                         self.drowsy_frames = max(0, self.drowsy_frames - 1)
 
-                left_eye = landmarks[36:42]
-                right_eye = landmarks[42:48]
-                
-                left_ear = self.calculate_ear(left_eye)
-                right_ear = self.calculate_ear(right_eye)
-                ear = (left_ear + right_ear) / 2.0
+            # Check for drowsiness
+            if self.drowsy_frames >= self.DROWSY_FRAME_THRESHOLD:
+                self.status = "DROWSY!"
+                if self.status != self.previous_status or can_alert:
+                    play_alarm = True
+                    raise_sos()
+                    self.last_alert_time = current_time
+                self.color = (0, 0, 255)
+            else:
+                self.status = "Active"
+                self.color = (0, 255, 0)
 
-                left_hull = cv2.convexHull(left_eye)
-                right_hull = cv2.convexHull(right_eye)
-                cv2.drawContours(frame, [left_hull], -1, (0, 255, 0), 1)
-                cv2.drawContours(frame, [right_hull], -1, (0, 255, 0), 1)
+            # Display status
+            cv2.putText(frame, self.status, (10, 30),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, self.color, 2)
+            cv2.putText(frame, f"Drowsy Frames: {self.drowsy_frames}", (10, 60),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
-                current_time = datetime.now()
-                can_alert = (self.last_alert_time is None or 
-                           (current_time - self.last_alert_time).total_seconds() > self.ALERT_COOLDOWN)
-
-                if ear < 0.25:
-                    self.drowsy_frames += 1
-                    if self.drowsy_frames >= self.DROWSY_FRAME_THRESHOLD:
-                        self.status = "DROWSY!"
-                        if self.status != self.previous_status or can_alert:
-                            play_alarm = True
-                            raise_sos()
-                            self.last_alert_time = current_time
-                        self.color = (0, 0, 255)
-                else:
-                    self.drowsy_frames = 0
-                    self.status = "Active"
-                    self.color = (0, 255, 0)
-
-                cv2.putText(frame, f"EAR: {ear:.2f}", (300, 30),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
-                cv2.putText(frame, self.status, (10, 30),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, self.color, 2)
-
-                self.previous_status = self.status
-
+            self.previous_status = self.status
             return frame, self.status, play_alarm
 
         except Exception as e:
