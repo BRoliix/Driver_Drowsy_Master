@@ -47,9 +47,11 @@ def get_current_location():
 load_dotenv()
 
 def connect():
-    pb = PocketBase(os.getenv('POCKETBASE_URL'))
+    pb_url = os.getenv('POCKETBASE_URL')
+    print(f"🔗 Connecting to PocketBase: {pb_url}")
+    pb = PocketBase(pb_url)
     
-    # Authenticate as admin if credentials are available
+    # Try admin authentication first
     admin_email = os.getenv('POCKETBASE_ADMIN_EMAIL')
     admin_password = os.getenv('POCKETBASE_ADMIN_PASSWORD')
     
@@ -57,9 +59,20 @@ def connect():
         try:
             pb.admins.auth_with_password(admin_email, admin_password)
             print("✅ Admin authenticated successfully")
+            return pb
         except Exception as e:
             print(f"⚠️  Admin authentication failed: {e}")
     
+    # If admin auth fails, try regular user auth (if it's also a regular user)
+    if admin_email and admin_password:
+        try:
+            pb.collection('users').auth_with_password(admin_email, admin_password)
+            print("✅ User authenticated successfully")
+            return pb
+        except Exception as e:
+            print(f"⚠️  User authentication failed: {e}")
+    
+    print("⚠️  No authentication successful, proceeding without auth")
     return pb
 
 def check():
@@ -103,9 +116,24 @@ def raise_sos(location_data=None):
         print("🔗 Connecting to PocketBase...")
         pb = connect()
         print("💾 Creating SOS record...")
-        result = pb.collection('sos_alerts').create(sos_data)
-        print(f"✅ SOS alert saved to PocketBase successfully with ID: {result.id}")
-        return True
+        
+        try:
+            result = pb.collection('sos_alerts').create(sos_data)
+            print(f"✅ SOS alert saved to PocketBase successfully with ID: {result.id}")
+            return True
+        except Exception as create_error:
+            print(f"❌ Create with auth failed: {create_error}")
+            
+            # Try without authentication in case collection allows public create
+            print("🔄 Trying to create record without authentication...")
+            pb_public = PocketBase(os.getenv('POCKETBASE_URL'))
+            try:
+                result = pb_public.collection('sos_alerts').create(sos_data)
+                print(f"✅ SOS alert saved to PocketBase (public) successfully with ID: {result.id}")
+                return True
+            except Exception as public_error:
+                print(f"❌ Public create also failed: {public_error}")
+                raise create_error  # Re-raise the original error
             
     except Exception as e:
         print(f"❌ Error raising SOS: {e}")
