@@ -9,14 +9,40 @@ import geocoder
 from local_storage import local_store
 
 def get_current_location():
-    g = geocoder.ip('me')
-    geolocator = Nominatim(user_agent="my_agent")
-    location = geolocator.reverse(f"{g.latlng[0]}, {g.latlng[1]}")
-    return {
-        'latitude': g.latlng[0],
-        'longitude': g.latlng[1],
-        'address': location.address if location else 'Unknown'
-    }
+    try:
+        print("🌍 Getting location via IP...")
+        g = geocoder.ip('me')
+        print(f"📍 IP Location: {g.latlng}")
+        
+        if g.latlng and len(g.latlng) >= 2:
+            try:
+                geolocator = Nominatim(user_agent="drowsiness_detector")
+                location = geolocator.reverse(f"{g.latlng[0]}, {g.latlng[1]}")
+                address = location.address if location else 'Unknown location'
+            except Exception as e:
+                print(f"⚠️ Geocoding failed: {e}")
+                address = 'Unknown location'
+            
+            return {
+                'latitude': g.latlng[0],
+                'longitude': g.latlng[1],
+                'address': address
+            }
+        else:
+            # Fallback to default location if IP location fails
+            print("⚠️ IP location failed, using default location")
+            return {
+                'latitude': 40.7128,  # NYC coordinates as fallback
+                'longitude': -74.0060,
+                'address': 'Location unavailable'
+            }
+    except Exception as e:
+        print(f"❌ Location service error: {e}")
+        return {
+            'latitude': 40.7128,  # NYC coordinates as fallback
+            'longitude': -74.0060,
+            'address': 'Location unavailable'
+        }
 
 load_dotenv()
 

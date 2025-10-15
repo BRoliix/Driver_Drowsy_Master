@@ -153,7 +153,10 @@ class DrowsinessDetector:
                 if self.status != self.previous_status or can_alert:
                     play_alarm = True
                     print(f"🚨 DROWSY DETECTED! Calling raise_sos() - Frames: {self.drowsy_frames}")
-                    raise_sos()
+                    try:
+                        raise_sos()
+                    except Exception as e:
+                        print(f"❌ Error in raise_sos: {e}")
                     self.last_alert_time = current_time
                 self.color = (0, 0, 255)
             else:
@@ -285,22 +288,36 @@ async def get_html():
             let currentAlarm = null;
             let stream = null;
 
-            async function loadAlarmSound() {
-                const response = await fetch('/static/alarm.wav');
-                const arrayBuffer = await response.arrayBuffer();
-                alarmBuffer = await audioContext.decodeAudioData(arrayBuffer);
+            function createBeepSound(frequency = 800, duration = 500) {
+                if (!audioContext) return null;
+                
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                oscillator.frequency.value = frequency;
+                oscillator.type = 'sine';
+                
+                gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration / 1000);
+                
+                return { oscillator, gainNode, duration };
             }
 
             function playAlarm() {
-                if (alarmBuffer && !currentAlarm) {
-                    const source = audioContext.createBufferSource();
-                    source.buffer = alarmBuffer;
-                    source.connect(audioContext.destination);
-                    source.start(0);
-                    source.onended = () => {
-                        currentAlarm = null;
-                    };
-                    currentAlarm = source;
+                if (!currentAlarm && audioContext) {
+                    console.log("🚨 Playing alarm sound");
+                    const beep = createBeepSound(800, 500);
+                    if (beep) {
+                        currentAlarm = beep.oscillator;
+                        beep.oscillator.start();
+                        beep.oscillator.stop(audioContext.currentTime + beep.duration / 1000);
+                        beep.oscillator.onended = () => {
+                            currentAlarm = null;
+                        };
+                    }
                 }
             }
 
@@ -329,7 +346,7 @@ async def get_html():
                     
                     if (!audioContext) {
                         audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                        // Skip alarm sound for now as we don't have the file
+                        console.log("🔊 Audio context initialized");
                     }
                     
                     isDetectionRunning = true;
