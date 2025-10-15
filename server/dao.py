@@ -75,6 +75,45 @@ def connect():
     print("⚠️  No authentication successful, proceeding without auth")
     return pb
 
+def setup_sos_collection():
+    """Try to create the sos_alerts collection if admin auth works"""
+    try:
+        pb = PocketBase(os.getenv('POCKETBASE_URL'))
+        admin_email = os.getenv('POCKETBASE_ADMIN_EMAIL')
+        admin_password = os.getenv('POCKETBASE_ADMIN_PASSWORD')
+        
+        if admin_email and admin_password:
+            pb.admins.auth_with_password(admin_email, admin_password)
+            
+            # Create collection schema
+            collection_data = {
+                "name": "sos_alerts",
+                "type": "base",
+                "schema": [
+                    {"name": "taxiid", "type": "text"},
+                    {"name": "driverid", "type": "text"},
+                    {"name": "details", "type": "text"},
+                    {"name": "status", "type": "text"},
+                    {"name": "createdtime", "type": "text"},
+                    {"name": "actionedtime", "type": "text"},
+                    {"name": "latitude", "type": "number"},
+                    {"name": "longitude", "type": "number"},
+                    {"name": "address", "type": "text"}
+                ],
+                "listRule": "",  # Anyone can list
+                "viewRule": "",  # Anyone can view
+                "createRule": "",  # Anyone can create
+                "updateRule": "",  # Anyone can update
+                "deleteRule": ""   # Anyone can delete
+            }
+            
+            result = pb.send("/api/collections", "POST", collection_data)
+            print(f"✅ Created sos_alerts collection: {result}")
+            return True
+    except Exception as e:
+        print(f"❌ Failed to create collection: {e}")
+        return False
+
 def check():
     print(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
     var = (datetime.now() + pd.DateOffset(hours=8)).strftime('%Y-%m-%d %H:%M:%S')
@@ -115,25 +154,61 @@ def raise_sos(location_data=None):
         # Save to PocketBase
         print("🔗 Connecting to PocketBase...")
         pb = connect()
-        print("💾 Creating SOS record...")
+        
+        # Try different collection names and approaches
+        collection_names = ['sos_alerts', 'sos', 'alerts']
+        
+        for collection_name in collection_names:
+            print(f"💾 Trying to create SOS record in '{collection_name}' collection...")
+            
+            try:
+                result = pb.collection(collection_name).create(sos_data)
+                print(f"✅ SOS alert saved to PocketBase successfully in '{collection_name}' with ID: {result.id}")
+                return True
+            except Exception as create_error:
+                print(f"❌ Create in '{collection_name}' failed: {create_error}")
+                
+                # Try without authentication for this collection
+                print(f"🔄 Trying '{collection_name}' without authentication...")
+                pb_public = PocketBase(os.getenv('POCKETBASE_URL'))
+                try:
+                    result = pb_public.collection(collection_name).create(sos_data)
+                    print(f"✅ SOS alert saved to PocketBase (public) in '{collection_name}' with ID: {result.id}")
+                    return True
+                except Exception as public_error:
+                    print(f"❌ Public create in '{collection_name}' also failed: {public_error}")
+                    continue
+        
+        # Try to setup the collection if all attempts failed
+        print("🔧 Attempting to create sos_alerts collection...")
+        if setup_sos_collection():
+            print("✅ Collection created, retrying SOS save...")
+            try:
+                result = pb.collection('sos_alerts').create(sos_data)
+                print(f"✅ SOS alert saved after collection creation with ID: {result.id}")
+                return True
+            except Exception as retry_error:
+                print(f"❌ Retry after collection creation failed: {retry_error}")
+        
+        # If all PocketBase attempts fail, save locally as fallback
+        print("💾 All PocketBase attempts failed, saving SOS locally as fallback...")
+        from local_storage import local_store
         
         try:
-            result = pb.collection('sos_alerts').create(sos_data)
-            print(f"✅ SOS alert saved to PocketBase successfully with ID: {result.id}")
+            local_sos_id = local_store.add_sos_alert(
+                taxiid='',
+                driverid='', 
+                details=sos_data['details'],
+                status=sos_data['status'],
+                latitude=sos_data['latitude'],
+                longitude=sos_data['longitude'],
+                address=sos_data['address']
+            )
+            print(f"✅ SOS alert saved locally with ID: {local_sos_id}")
             return True
-        except Exception as create_error:
-            print(f"❌ Create with auth failed: {create_error}")
-            
-            # Try without authentication in case collection allows public create
-            print("🔄 Trying to create record without authentication...")
-            pb_public = PocketBase(os.getenv('POCKETBASE_URL'))
-            try:
-                result = pb_public.collection('sos_alerts').create(sos_data)
-                print(f"✅ SOS alert saved to PocketBase (public) successfully with ID: {result.id}")
-                return True
-            except Exception as public_error:
-                print(f"❌ Public create also failed: {public_error}")
-                raise create_error  # Re-raise the original error
+        except Exception as local_error:
+            print(f"❌ Local save also failed: {local_error}")
+            return False
             
     except Exception as e:
         print(f"❌ Error raising SOS: {e}")
