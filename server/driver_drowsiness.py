@@ -6,6 +6,7 @@ import numpy as np
 from scipy.spatial import distance
 import asyncio
 import base64
+import json
 import os
 from datetime import datetime
 from dao import raise_sos
@@ -177,25 +178,31 @@ detector = DrowsinessDetector()
 @app.websocket("/ws/video")
 async def video_feed(websocket: WebSocket):
     await websocket.accept()
-    cap = cv2.VideoCapture(0)
     try:
         while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-            processed_frame, status, play_alarm = await detector.process_frame(frame)
-            _, buffer = cv2.imencode('.jpg', processed_frame)
-            base64_frame = base64.b64encode(buffer).decode('utf-8')
-            await websocket.send_json({
-                "frame": base64_frame,
-                "status": status,
-                "play_alarm": play_alarm
-            })
+            # Receive frame from client (browser camera)
+            message = await websocket.receive_text()
+            data = json.loads(message)  # Parse incoming frame data
+            
+            # Decode base64 image
+            frame_data = base64.b64decode(data['frame'])
+            nparr = np.frombuffer(frame_data, np.uint8)
+            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            
+            if frame is not None:
+                processed_frame, status, play_alarm = await detector.process_frame(frame)
+                _, buffer = cv2.imencode('.jpg', processed_frame)
+                base64_frame = base64.b64encode(buffer).decode('utf-8')
+                await websocket.send_json({
+                    "frame": base64_frame,
+                    "status": status,
+                    "play_alarm": play_alarm
+                })
             await asyncio.sleep(0.03)
     except Exception as e:
         print(f"WebSocket error: {e}")
     finally:
-        cap.release()
+        pass
 
 @app.get("/")
 async def get_html():
@@ -259,18 +266,24 @@ async def get_html():
         <div class="container">
             <h1>Drowsiness Detection System</h1>
             <button id="startButton">Start Detection</button>
+            <video id="webcam" autoplay muted style="display: none; width: 100%; max-width: 640px;"></video>
+            <canvas id="canvas" style="display: none;"></canvas>
             <img id="video" alt="Video feed" style="display: none;">
             <div id="status">Click 'Start Detection' to begin</div>
         </div>
         <script>
             let ws = null;
             const video = document.getElementById('video');
+            const webcam = document.getElementById('webcam');
+            const canvas = document.getElementById('canvas');
+            const ctx = canvas.getContext('2d');
             const status = document.getElementById('status');
             const startButton = document.getElementById('startButton');
             let isDetectionRunning = false;
             let audioContext = null;
             let alarmBuffer = null;
             let currentAlarm = null;
+            let stream = null;
 
             async function loadAlarmSound() {
                 const response = await fetch('/static/alarm.wav');
@@ -300,40 +313,86 @@ async def get_html():
 
             async function startDetection() {
                 if (isDetectionRunning) return;
-                if (!audioContext) {
-                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                    await loadAlarmSound();
-                }
-                video.style.display = 'block';
-                isDetectionRunning = true;
-                startButton.textContent = 'Detection Running';
-                ws = new WebSocket(`ws://${window.location.host}/ws/video`);
-                ws.onmessage = function(event) {
-                    const data = JSON.parse(event.data);
-                    video.src = `data:image/jpeg;base64,${data.frame}`;
-                    status.textContent = data.status;
-                    status.className = '';
-                    if (data.status.includes('Active')) {
-                        status.classList.add('active');
-                        stopAlarm();
-                    } else if (data.status.includes('DROWSY')) {
-                        status.classList.add('drowsy');
-                        if (data.play_alarm) {
-                            playAlarm();
-                        }
+                
+                try {
+                    // Request camera access
+                    stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                    webcam.srcObject = stream;
+                    webcam.style.display = 'block';
+                    video.style.display = 'block';
+                    
+                    // Set canvas size
+                    webcam.onloadedmetadata = function() {
+                        canvas.width = webcam.videoWidth;
+                        canvas.height = webcam.videoHeight;
+                    };
+                    
+                    if (!audioContext) {
+                        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                        // Skip alarm sound for now as we don't have the file
                     }
-                };
-                ws.onclose = function() {
-                    status.textContent = 'Connection closed';
-                    isDetectionRunning = false;
-                    startButton.textContent = 'Start Detection';
-                    stopAlarm();
-                    setTimeout(startDetection, 1000);
-                };
-                ws.onerror = function(err) {
-                    console.error('WebSocket error:', err);
-                    ws.close();
-                };
+                    
+                    isDetectionRunning = true;
+                    startButton.textContent = 'Detection Running';
+                    
+                    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    ws = new WebSocket(`${protocol}//${window.location.host}/ws/video`);
+                    
+                    ws.onopen = function() {
+                        // Start sending frames
+                        sendFrames();
+                    };
+                    
+                    ws.onmessage = function(event) {
+                        const data = JSON.parse(event.data);
+                        video.src = `data:image/jpeg;base64,${data.frame}`;
+                        status.textContent = data.status;
+                        status.className = '';
+                        if (data.status.includes('Active')) {
+                            status.classList.add('active');
+                            stopAlarm();
+                        } else if (data.status.includes('DROWSY')) {
+                            status.classList.add('drowsy');
+                            if (data.play_alarm) {
+                                playAlarm();
+                            }
+                        }
+                    };
+                    
+                    ws.onclose = function() {
+                        status.textContent = 'Connection closed';
+                        isDetectionRunning = false;
+                        startButton.textContent = 'Start Detection';
+                        stopAlarm();
+                        if (stream) {
+                            stream.getTracks().forEach(track => track.stop());
+                        }
+                    };
+                    
+                    ws.onerror = function(err) {
+                        console.error('WebSocket error:', err);
+                        ws.close();
+                    };
+                } catch (err) {
+                    console.error('Error accessing camera:', err);
+                    status.textContent = 'Error accessing camera. Please allow camera permissions.';
+                }
+            }
+            
+            function sendFrames() {
+                if (!isDetectionRunning || !ws || ws.readyState !== WebSocket.OPEN) return;
+                
+                ctx.drawImage(webcam, 0, 0, canvas.width, canvas.height);
+                canvas.toBlob(function(blob) {
+                    const reader = new FileReader();
+                    reader.onload = function() {
+                        const base64 = reader.result.split(',')[1];
+                        ws.send(JSON.stringify({ frame: base64 }));
+                    };
+                    reader.readAsDataURL(blob);
+                }, 'image/jpeg', 0.8);
+                
+                setTimeout(sendFrames, 100); // Send frame every 100ms
             }
 
             startButton.addEventListener('click', startDetection);
