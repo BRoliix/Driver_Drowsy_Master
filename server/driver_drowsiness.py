@@ -10,7 +10,6 @@ import base64
 import os
 from datetime import datetime
 from dao import raise_sos
-import tensorflow as tf
 
 app = FastAPI()
 static_dir = "static"
@@ -22,12 +21,14 @@ class DrowsinessDetector:
     def __init__(self):
         self.detector = dlib.get_frontal_face_detector()
         self.predictor = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")
-        self.model = tf.keras.models.load_model("models/drowsiness_detector.keras", compile=False)
-        self.model.compile(
-            optimizer=tf.keras.optimizers.legacy.Adam(learning_rate=0.001),
-            loss='binary_crossentropy',
-            metrics=['accuracy']
-        )
+        # TensorFlow model temporarily disabled due to Python 3.14 compatibility
+        # self.model = tf.keras.models.load_model("models/drowsiness_detector.keras", compile=False)
+        # self.model.compile(
+        #     optimizer=tf.keras.optimizers.legacy.Adam(learning_rate=0.001),
+        #     loss='binary_crossentropy',
+        #     metrics=['accuracy']
+        # )
+        self.model = None  # Placeholder
         self.drowsy_frames = 0
         self.status = ""
         self.color = (0, 0, 0)

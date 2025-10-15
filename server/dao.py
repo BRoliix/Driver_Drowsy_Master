@@ -1,12 +1,12 @@
-from pymongo import MongoClient
+from pocketbase import PocketBase
 from datetime import datetime
 import pandas as pd
-from bson import ObjectId, json_util
 import json
 from dotenv import load_dotenv
 import os
 from geopy.geocoders import Nominatim
 import geocoder
+from local_storage import local_store
 
 def get_current_location():
     g = geocoder.ip('me')
@@ -21,33 +21,37 @@ def get_current_location():
 load_dotenv()
 
 def connect():
-    client = MongoClient(os.getenv('MONGODB_URI'))
-    db = client[os.getenv('DB_NAME')]
-    return db
+    pb = PocketBase(os.getenv('POCKETBASE_URL'))
+    
+    # Authenticate as admin if credentials are available
+    admin_email = os.getenv('POCKETBASE_ADMIN_EMAIL')
+    admin_password = os.getenv('POCKETBASE_ADMIN_PASSWORD')
+    
+    if admin_email and admin_password:
+        try:
+            pb.admins.auth_with_password(admin_email, admin_password)
+            print("✅ Admin authenticated successfully")
+        except Exception as e:
+            print(f"⚠️  Admin authentication failed: {e}")
+    
+    return pb
 
 def check():
     print(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
     var = (datetime.now() + pd.DateOffset(hours=8)).strftime('%Y-%m-%d %H:%M:%S')
     print(var)
 
-    db = connect()
-    sos_collection = db.sos
+    pb = connect()
     
-    sos_records = list(sos_collection.find({}, {
-        'taxiid': 1,
-        'driverid': 1,
-        'details': 1,
-        'status': 1,
-        'createdtime': 1,
-        'actionedtime': 1,
-        'sessionid': 1
-    }))
-    print(sos_records)
+    try:
+        sos_records = pb.collection('sos').get_full_list()
+        print(sos_records)
+    except Exception as e:
+        print(f"Error fetching SOS records: {e}")
 
 def raise_sos(location_data=None):
     try:
         print("Raising SOS alert...")
-        db = connect()
         
         # If no location data is provided, get current location
         if location_data is None:
@@ -55,136 +59,119 @@ def raise_sos(location_data=None):
         
         print(f"Location data: {location_data}")
         sos_data = {
-            'taxiid': ObjectId(),
-            'driverid': ObjectId(),
+            'taxiid': '',  # Will be set when user logs in
+            'driverid': '',  # Will be set when user logs in
             'details': 'Driver detected sleeping/drowsy. Immediate attention required.',
             'status': 'NEW',
-            'createdtime': datetime.now(),
-            'actionedtime': datetime.now(),
-            'location': {
-                'latitude': location_data['latitude'],
-                'longitude': location_data['longitude'],
-                'address': location_data['address']
-            }
+            'createdtime': datetime.now().isoformat(),
+            'actionedtime': datetime.now().isoformat(),
+            'latitude': location_data['latitude'],
+            'longitude': location_data['longitude'],
+            'address': location_data['address']
         }
         
-        result = db.sos.insert_one(sos_data)
-        if result.inserted_id:
-            print("SOS alert raised successfully")
-            return True
-        return False
+        # Save to PocketBase
+        pb = connect()
+        result = pb.collection('sos_alerts').create(sos_data)
+        print(f"✅ SOS alert saved to PocketBase successfully with ID: {result.id}")
+        return True
+            
     except Exception as e:
-        print(f"Error raising SOS: {e}")
+        print(f"❌ Error raising SOS: {e}")
         return False
 
 def sos_details(sid=None):
-    db = connect()
-    sos_collection = db.sos
-    
-    sos_records = list(sos_collection.find({}, {
-        'taxiid': 1,
-        'driverid': 1,
-        'details': 1,
-        'status': 1,
-        'createdtime': 1,
-        'actionedtime': 1,
-        'sessionid': 1,
-        'location': 1  # Added location field to the projection
-    }))
-    
-    return json.loads(json_util.dumps(sos_records))
+    try:
+        pb = connect()
+        if sid:
+            sos_records = [pb.collection('sos_alerts').get_one(sid)]
+        else:
+            sos_records = pb.collection('sos_alerts').get_full_list()
+        
+        print(f"✅ SOS details fetched from PocketBase ({len(sos_records)} records)")
+        return sos_records
+        
+    except Exception as e:
+        print(f"❌ Error fetching SOS details from PocketBase: {e}")
+        return []
 
 def session_details():
-    db = connect()
-    pipeline = [
-        {
-            '$lookup': {
-                'from': 'taxi',
-                'localField': 'taxiid',
-                'foreignField': '_id',
-                'as': 'taxi'
-            }
-        },
-        {
-            '$lookup': {
-                'from': 'user',
-                'localField': 'userid',
-                'foreignField': '_id',
-                'as': 'user'
-            }
-        },
-        {
-            '$lookup': {
-                'from': 'sos',
-                'localField': '_id',
-                'foreignField': 'sessionId',
-                'as': 'sos'
-            }
-        },
-        {
-            '$match': {
-                'user.type': 'Driver',
-                'user.status': 'Active'
-            }
-        }
-    ]
+    pb = connect()
     
-    sessions = list(db.session.aggregate(pipeline))
-    formatted_sessions = []
-    
-    for session in sessions:
-        formatted_session = {
-            'TaxiNumber': session['taxi'][0]['number'],
-            'FirstName': session['user'][0]['firstname'],
-            'LastName': session['user'][0]['lastname'],
-            'Code': session['user'][0]['code'],
-            'StartTime': session['starttime'].strftime('%Y-%m-%d %H:%M:%S'),
-            'EndTime': session['endtime'].strftime('%Y-%m-%d %H:%M:%S'),
-            'Status': 'SOS Actioned' if session.get('sos') else 'Active'
-        }
-        formatted_sessions.append(formatted_session)
-    
-    return formatted_sessions
+    try:
+        # Get sessions with expanded relations
+        sessions = pb.collection('sessions').get_full_list(expand='taxiid,userid')
+        formatted_sessions = []
+        
+        for session in sessions:
+            if hasattr(session, 'expand') and session.expand:
+                taxi = session.expand.get('taxiid', {})
+                user = session.expand.get('userid', {})
+                
+                if user.get('type') == 'Driver' and user.get('status') == 'Active':
+                    formatted_session = {
+                        'TaxiNumber': taxi.get('number', ''),
+                        'FirstName': user.get('firstname', ''),
+                        'LastName': user.get('lastname', ''),
+                        'Code': user.get('code', ''),
+                        'StartTime': session.get('starttime', ''),
+                        'EndTime': session.get('endtime', ''),
+                        'Status': 'Active'  # Simplified for now
+                    }
+                    formatted_sessions.append(formatted_session)
+        
+        return formatted_sessions
+    except Exception as e:
+        print(f"Error fetching session details: {e}")
+        return []
 
 def action_sos(sid):
-    db = connect()
-    db.sos.update_one(
-        {'_id': ObjectId(sid)},
-        {'$set': {'actionedtime': datetime.now()}}
-    )
+    pb = connect()
+    try:
+        pb.collection('sos').update(sid, {'actionedtime': datetime.now().isoformat()})
+    except Exception as e:
+        print(f"Error updating SOS: {e}")
 
 def login(pid, taxi, password):
-    db = connect()
-    user = db.user.find_one({
-        '_id': ObjectId(pid),
-        'password': password
-    })
-    
-    taxi_doc = db.taxi.find_one({'number': taxi})
-    
-    if user and taxi_doc:
-        session_data = {
-            'taxiid': taxi_doc['_id'],
-            'userid': ObjectId(pid),
-            'starttime': datetime.now(),
-            'endtime': datetime.now() + pd.DateOffset(hours=8)
-        }
-        db.session.insert_one(session_data)
+    pb = connect()
+    try:
+        # Find user by ID and password
+        user = pb.collection('users').get_one(pid)
+        if user and user.password == password:
+            # Find taxi by number
+            taxi_list = pb.collection('taxis').get_list(1, 1, {'filter': f'number="{taxi}"'})
+            if taxi_list.items:
+                taxi_doc = taxi_list.items[0]
+                session_data = {
+                    'taxiid': taxi_doc.id,
+                    'userid': pid,
+                    'starttime': datetime.now().isoformat(),
+                    'endtime': (datetime.now() + pd.DateOffset(hours=8)).isoformat()
+                }
+                pb.collection('sessions').create(session_data)
+                return True
+        return False
+    except Exception as e:
+        print(f"Error during login: {e}")
+        return False
 
 def admlogin(pid, password):
-    db = connect()
-    user = db.user.find_one({
-        '_id': ObjectId(pid),
-        'password': password
-    }, {'status': 1})
-    return [user] if user else []
+    pb = connect()
+    try:
+        user = pb.collection('users').get_one(pid)
+        if user and user.password == password and user.type == 'Admin':
+            return [{'status': user.status}]
+        return []
+    except Exception as e:
+        print(f"Error during admin login: {e}")
+        return []
 
 
 def create_user(user_data):
     try:
-        db = connect()
-        result = db.user.insert_one(user_data)
-        return str(result.inserted_id)
+        pb = connect()
+        result = pb.collection('users').create(user_data)
+        return result.id
     except Exception as e:
         print(f"Error creating user: {e}")
         return None

@@ -1,0 +1,44 @@
+[
+  {
+    "taxiid": "",
+    "driverid": "",
+    "details": "Driver detected sleeping/drowsy. Immediate attention required.",
+    "status": "NEW",
+    "createdtime": "2025-10-15T20:54:50.884964",
+    "actionedtime": "2025-10-15T20:54:50.884969",
+    "latitude": 25.0772,
+    "longitude": 55.3093,
+    "address": "Test Location, Dubai, UAE",
+    "id": "sos_alerts_1_1760547292",
+    "created": "2025-10-15T20:54:52.403175",
+    "updated": "2025-10-15T20:54:52.403178"
+  },
+  {
+    "taxiid": "",
+    "driverid": "",
+    "details": "Driver detected sleeping/drowsy. Immediate attention required.",
+    "status": "NEW",
+    "createdtime": "2025-10-15T21:01:46.181666",
+    "actionedtime": "2025-10-15T21:01:46.181691",
+    "latitude": 25.0772,
+    "longitude": 55.3093,
+    "address": "\u0634\u0627\u0631\u0639 \u0627\u0644\u0634\u064a\u062e \u0645\u062d\u0645\u062f \u0628\u0646 \u0632\u0627\u064a\u062f, \u0645\u062f\u064a\u0646\u0629 \u0627\u0644\u0639\u0631\u0628, \u062f\u0628\u064a, \u0627\u0644\u0625\u0645\u0627\u0631\u0627\u062a \u0627\u0644\u0639\u0631\u0628\u064a\u0629 \u0627\u0644\u0645\u062a\u062d\u062f\u0629",
+    "id": "sos_alerts_2_1760547707",
+    "created": "2025-10-15T21:01:47.143604",
+    "updated": "2025-10-15T21:01:47.143615"
+  },
+  {
+    "taxiid": "",
+    "driverid": "",
+    "details": "Driver detected sleeping/drowsy. Immediate attention required.",
+    "status": "NEW",
+    "createdtime": "2025-10-15T21:02:05.648427",
+    "actionedtime": "2025-10-15T21:02:05.648440",
+    "latitude": 25.0772,
+    "longitude": 55.3093,
+    "address": "\u0634\u0627\u0631\u0639 \u0627\u0644\u0634\u064a\u062e \u0645\u062d\u0645\u062f \u0628\u0646 \u0632\u0627\u064a\u062f, \u0645\u062f\u064a\u0646\u0629 \u0627\u0644\u0639\u0631\u0628, \u062f\u0628\u064a, \u0627\u0644\u0625\u0645\u0627\u0631\u0627\u062a \u0627\u0644\u0639\u0631\u0628\u064a\u0629 \u0627\u0644\u0645\u062a\u062d\u062f\u0629",
+    "id": "sos_alerts_3_1760547726",
+    "created": "2025-10-15T21:02:06.547552",
+    "updated": "2025-10-15T21:02:06.547563"
+  }
+]

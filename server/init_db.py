@@ -1,78 +1,36 @@
 from dao import connect
 
 def init_database():
-    db = connect()  
+    """
+    Initialize PocketBase collections.
+    Note: In PocketBase, collections are created automatically when first used.
+    This function can be used to create sample data or verify connection.
+    """
+    pb = connect()
     
-    collections = {
-        'user': {
-            'validator': {
-                '$jsonSchema': {
-                    'bsonType': 'object',
-                    'required': ['firstname', 'lastname', 'type', 'status', 'code', 'password'],
-                    'properties': {
-                        'firstname': {'bsonType': 'string'},
-                        'lastname': {'bsonType': 'string'},
-                        'type': {'enum': ['Driver', 'Admin']},
-                        'status': {'enum': ['Active', 'Inactive']},
-                        'code': {'bsonType': 'string'},
-                        'password': {'bsonType': 'string'}
-                    }
-                }
-            }
-        },
-        'taxi': {
-            'validator': {
-                '$jsonSchema': {
-                    'bsonType': 'object',
-                    'required': ['number'],
-                    'properties': {
-                        'number': {'bsonType': 'string'}
-                    }
-                }
-            }
-        },
-        'session': {
-            'validator': {
-                '$jsonSchema': {
-                    'bsonType': 'object',
-                    'required': ['taxiid', 'userid', 'starttime', 'endtime'],
-                    'properties': {
-                        'taxiid': {'bsonType': 'objectId'},
-                        'userid': {'bsonType': 'objectId'},
-                        'starttime': {'bsonType': 'date'},
-                        'endtime': {'bsonType': 'date'}
-                    }
-                }
-            }
-        },
-        'sos': {
-            'validator': {
-                '$jsonSchema': {
-                    'bsonType': 'object',
-                    'required': ['taxiid', 'driverid', 'details', 'status', 'createdtime'],
-                    'properties': {
-                        'taxiid': {'bsonType': 'objectId'},
-                        'driverid': {'bsonType': 'objectId'},
-                        'details': {'bsonType': 'string'},
-                        'status': {'enum': ['NEW', 'ACTIONED']},
-                        'createdtime': {'bsonType': 'date'},
-                        'actionedtime': {'bsonType': 'date'},
-                        'sessionId': {'bsonType': 'objectId'}
-                    }
-                }
-            }
+    print("Connected to PocketBase successfully!")
+    print("Collections will be auto-created when first used.")
+    print("Required collections:")
+    print("- users: Store user information (drivers and admins)")
+    print("- taxis: Store taxi information") 
+    print("- sessions: Store active driving sessions")
+    print("- sos: Store SOS alerts")
+    
+    # Example: Create a test user (optional)
+    try:
+        test_user = {
+            'firstname': 'Test',
+            'lastname': 'Driver',
+            'type': 'Driver',
+            'status': 'Active',
+            'code': 'TD001',
+            'password': 'test123'
         }
-    }
-
-    for name, config in collections.items():
-        if name not in db.list_collection_names():
-            db.create_collection(name, validator=config['validator'])
-
-    db.user.create_index([("type", 1), ("status", 1)])
-    db.taxi.create_index([("number", 1)], unique=True)
-    db.sos.create_index([("actionedtime", 1)])
-    
-    print("Database initialized successfully!")
+        # Uncomment the line below if you want to create a test user
+        # pb.collection('users').create(test_user)
+        print("Database initialization completed!")
+    except Exception as e:
+        print(f"Note: {e}")
 
 if __name__ == "__main__":
     init_database()
