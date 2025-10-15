@@ -3,13 +3,21 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 import cv2
 import numpy as np
-import dlib
 from scipy.spatial import distance
 import asyncio
 import base64
 import os
 from datetime import datetime
 from dao import raise_sos
+
+# Try to import dlib, fallback to OpenCV if not available (for Railway deployment)
+try:
+    import dlib
+    DLIB_AVAILABLE = True
+    print("✅ dlib loaded successfully")
+except ImportError:
+    DLIB_AVAILABLE = False
+    print("⚠️  dlib not available, using OpenCV fallback")
 
 app = FastAPI()
 static_dir = "static"
@@ -19,15 +27,26 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 class DrowsinessDetector:
     def __init__(self):
-        self.detector = dlib.get_frontal_face_detector()
-        self.predictor = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")
+        # Initialize based on available libraries
+        if DLIB_AVAILABLE:
+            self.detector = dlib.get_frontal_face_detector()
+            predictor_path = "shape_predictor_68_face_landmarks.dat"
+            if os.path.exists(predictor_path):
+                self.predictor = dlib.shape_predictor(predictor_path)
+                self.use_advanced = True
+                print("✅ Using dlib with facial landmarks")
+            else:
+                self.use_advanced = False
+                print("⚠️  Landmark file not found, using basic dlib")
+        else:
+            # Fallback to OpenCV
+            self.face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+            self.eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
+            self.use_advanced = False
+            print("✅ Using OpenCV cascades")
+        
         # TensorFlow model temporarily disabled due to Python 3.14 compatibility
         # self.model = tf.keras.models.load_model("models/drowsiness_detector.keras", compile=False)
-        # self.model.compile(
-        #     optimizer=tf.keras.optimizers.legacy.Adam(learning_rate=0.001),
-        #     loss='binary_crossentropy',
-        #     metrics=['accuracy']
-        # )
         self.model = None  # Placeholder
         self.drowsy_frames = 0
         self.status = ""
@@ -44,20 +63,71 @@ class DrowsinessDetector:
         ear = (A + B) / (2.0 * C)
         return ear
 
+    def simple_eye_detection(self, gray, face_rect):
+        """Simple eye detection using OpenCV cascades"""
+        x, y, w, h = face_rect
+        roi_gray = gray[y:y+h, x:x+w]
+        eyes = self.eye_cascade.detectMultiScale(roi_gray, 1.1, 5)
+        return len(eyes)
+
     async def process_frame(self, frame):
         try:
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            faces = self.detector(gray)
             play_alarm = False
 
-            if len(faces) == 0:
-                self.drowsy_frames = 0
-                self.status = "No face detected"
-                return frame, self.status, play_alarm
+            if DLIB_AVAILABLE and hasattr(self, 'detector'):
+                # Use dlib detection
+                faces = self.detector(gray)
+                
+                if len(faces) == 0:
+                    self.drowsy_frames = 0
+                    self.status = "No face detected"
+                    return frame, self.status, play_alarm
 
-            for face in faces:
-                landmarks = self.predictor(gray, face)
-                landmarks = np.array([[p.x, p.y] for p in landmarks.parts()])
+                for face in faces:
+                    if self.use_advanced and hasattr(self, 'predictor'):
+                        # Advanced landmark detection
+                        landmarks = self.predictor(gray, face)
+                        landmarks = np.array([[p.x, p.y] for p in landmarks.parts()])
+                        
+                        # Extract eye regions
+                        left_eye = landmarks[36:42]
+                        right_eye = landmarks[42:48]
+                        
+                        left_ear = self.calculate_ear(left_eye)
+                        right_ear = self.calculate_ear(right_eye)
+                        ear = (left_ear + right_ear) / 2.0
+                        
+                        if ear < 0.25:  # Eyes closed threshold
+                            self.drowsy_frames += 1
+                        else:
+                            self.drowsy_frames = 0
+                    else:
+                        # Basic dlib detection without landmarks
+                        self.drowsy_frames += 1 if self.drowsy_frames < 10 else 0
+                        
+                    # Draw face rectangle
+                    x, y, w, h = face.left(), face.top(), face.width(), face.height()
+                    cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            else:
+                # Use OpenCV cascade detection
+                faces = self.face_cascade.detectMultiScale(gray, 1.3, 5)
+                
+                if len(faces) == 0:
+                    self.drowsy_frames = 0
+                    self.status = "No face detected"
+                    return frame, self.status, play_alarm
+
+                for (x, y, w, h) in faces:
+                    cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+                    
+                    # Simple eye detection
+                    eyes_count = self.simple_eye_detection(gray, (x, y, w, h))
+                    
+                    if eyes_count < 2:  # Likely eyes closed
+                        self.drowsy_frames += 1
+                    else:
+                        self.drowsy_frames = max(0, self.drowsy_frames - 1)
 
                 left_eye = landmarks[36:42]
                 right_eye = landmarks[42:48]

@@ -1,0 +1,17 @@
+# Railway Requirements - Optimized for Railway deployment
+fastapi==0.115.6
+uvicorn[standard]==0.32.0
+opencv-python-headless==4.10.0.84
+numpy==2.1.2
+scipy==1.14.1
+imutils==0.5.4
+pocketbase==0.11.1
+python-dotenv==1.0.1
+geopy==2.4.1
+geocoder==1.38.1
+pandas==2.2.3
+websockets==13.1
+python-multipart==0.0.12
+
+# Note: Using opencv-python-headless for Railway compatibility
+# dlib removed due to compilation issues on Railway
