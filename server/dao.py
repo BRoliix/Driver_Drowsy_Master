@@ -51,13 +51,14 @@ def check():
 
 def raise_sos(location_data=None):
     try:
-        print("Raising SOS alert...")
+        print("🚨 Raising SOS alert...")
         
         # If no location data is provided, get current location
         if location_data is None:
+            print("Getting current location...")
             location_data = get_current_location()
         
-        print(f"Location data: {location_data}")
+        print(f"📍 Location data: {location_data}")
         sos_data = {
             'taxiid': '',  # Will be set when user logs in
             'driverid': '',  # Will be set when user logs in
@@ -70,14 +71,20 @@ def raise_sos(location_data=None):
             'address': location_data['address']
         }
         
+        print(f"📝 SOS data to save: {sos_data}")
+        
         # Save to PocketBase
+        print("🔗 Connecting to PocketBase...")
         pb = connect()
+        print("💾 Creating SOS record...")
         result = pb.collection('sos_alerts').create(sos_data)
         print(f"✅ SOS alert saved to PocketBase successfully with ID: {result.id}")
         return True
             
     except Exception as e:
         print(f"❌ Error raising SOS: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 def sos_details(sid=None):

@@ -152,6 +152,7 @@ class DrowsinessDetector:
                 self.status = "DROWSY!"
                 if self.status != self.previous_status or can_alert:
                     play_alarm = True
+                    print(f"🚨 DROWSY DETECTED! Calling raise_sos() - Frames: {self.drowsy_frames}")
                     raise_sos()
                     self.last_alert_time = current_time
                 self.color = (0, 0, 255)
