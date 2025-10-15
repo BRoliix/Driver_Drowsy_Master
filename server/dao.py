@@ -105,12 +105,15 @@ def raise_sos(location_data=None):
             'driverid': '',  # Will be set when user logs in
             'details': 'Driver detected sleeping/drowsy. Immediate attention required.',
             'status': 'NEW',
-            'createdtime': datetime.now().isoformat(),
             'actionedtime': datetime.now().isoformat(),
             'latitude': location_data['latitude'],
             'longitude': location_data['longitude'],
             'address': location_data['address']
         }
+        
+        # For local storage, include createdtime
+        local_sos_data = sos_data.copy()
+        local_sos_data['createdtime'] = datetime.now().isoformat()
         
         print(f"📝 SOS data to save: {sos_data}")
         
@@ -120,18 +123,20 @@ def raise_sos(location_data=None):
         
         try:
             # Try the main collection first
+            print(f"📤 Sending data to PocketBase: {sos_data}")
             result = pb.collection('sos_alerts').create(sos_data)
             print(f"✅ SOS alert saved to PocketBase successfully with ID: {result.id}")
             return True
         except Exception as create_error:
             print(f"❌ PocketBase save failed: {create_error}")
+            print(f"📤 Failed data was: {sos_data}")
             
             # Quick fallback to local storage
             print("💾 Saving SOS locally as fallback...")
             from local_storage import local_store
             
             try:
-                local_record = local_store.create_record('sos_alerts', sos_data)
+                local_record = local_store.create_record('sos_alerts', local_sos_data)
                 print(f"✅ SOS alert saved locally with ID: {local_record['id']}")
                 return True
             except Exception as local_error:
