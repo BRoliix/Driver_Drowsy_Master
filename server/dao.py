@@ -121,6 +121,13 @@ def raise_sos(location_data=None):
         print("🔗 Connecting to PocketBase...")
         pb = connect()
         
+        # Try to get collection info for debugging
+        try:
+            collection_info = pb.send("/api/collections/sos_alerts", "GET")
+            print(f"📋 Collection schema: {collection_info}")
+        except Exception as schema_error:
+            print(f"⚠️ Could not get collection schema: {schema_error}")
+        
         try:
             # Try the main collection first
             print(f"📤 Sending data to PocketBase: {sos_data}")
@@ -130,6 +137,38 @@ def raise_sos(location_data=None):
         except Exception as create_error:
             print(f"❌ PocketBase save failed: {create_error}")
             print(f"📤 Failed data was: {sos_data}")
+            
+            # Try to get more detailed error info
+            if hasattr(create_error, 'data'):
+                print(f"🔍 Error details: {create_error.data}")
+            if hasattr(create_error, 'response'):
+                print(f"🔍 Error response: {create_error.response}")
+            
+            # Let's also try creating a minimal record to test
+            print("🧪 Testing with minimal data...")
+            try:
+                minimal_data = {
+                    'details': 'Test SOS',
+                    'status': 'NEW'
+                }
+                test_result = pb.collection('sos_alerts').create(minimal_data)
+                print(f"✅ Minimal record created successfully: {test_result.id}")
+                
+                # If minimal works, try adding fields one by one
+                print("🧪 Testing with location data...")
+                location_data = {
+                    'details': 'Test SOS with location',
+                    'status': 'NEW',
+                    'latitude': 1.2959,
+                    'longitude': 103.7907
+                }
+                test_result2 = pb.collection('sos_alerts').create(location_data)
+                print(f"✅ Location record created successfully: {test_result2.id}")
+                
+            except Exception as test_error:
+                print(f"❌ Even minimal record failed: {test_error}")
+                if hasattr(test_error, 'data'):
+                    print(f"🔍 Test error details: {test_error.data}")
             
             # Quick fallback to local storage
             print("💾 Saving SOS locally as fallback...")
